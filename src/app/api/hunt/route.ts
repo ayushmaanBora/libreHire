@@ -240,9 +240,10 @@ function detectQueryMode(query: string): { mode: 'technical'|'person'|'open'; co
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function callGemini(prompt: string, key: string) {
+  const bodyData = new TextEncoder().encode(JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } }));
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } })
+    body: bodyData
   });
   const data = await res.json();
   if (data.error) throw new Error(`Gemini: ${data.error.message}`);
@@ -250,10 +251,11 @@ async function callGemini(prompt: string, key: string) {
 }
 
 async function callClaude(prompt: string, key: string) {
+  const bodyData = new TextEncoder().encode(JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 4096, messages: [{ role: 'user', content: prompt }], temperature: 0.1 }));
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 4096, messages: [{ role: 'user', content: prompt }], temperature: 0.1 })
+    body: bodyData
   });
   const data = await res.json();
   if (data.error) throw new Error(`Claude: ${data.error.message}`);
@@ -263,10 +265,11 @@ async function callClaude(prompt: string, key: string) {
 async function callUniversal(prompt: string, key: string, baseUrl: string, modelName: string) {
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const url = cleanBase.endsWith('/chat/completions') ? cleanBase : `${cleanBase}/chat/completions`;
+  const bodyData = new TextEncoder().encode(JSON.stringify({ model: modelName || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.1, response_format: { type: 'json_object' } }));
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model: modelName || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.1, response_format: { type: 'json_object' } })
+    body: bodyData
   });
   const data = await res.json();
   if (data.error) throw new Error(`API: ${data.error.message || JSON.stringify(data.error)}`);
