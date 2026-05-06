@@ -1,0 +1,23 @@
+{
+  "jobProfile": "Kernel / Low-Level",
+  "languages": [
+    "Rust"
+  ],
+  "country": "India",
+  "state": "Delhi",
+  "city": "Delhi",
+  "queries": [
+    "location:\"delhi\" language:\"Rust\" type:user",
+    "location:\"new delhi\" language:\"Rust\" type:user",
+    "location:\"ncr\" language:\"Rust\" type:user"
+  ],
+  "locationInfo": {
+    "canonical": "Delhi",
+    "variants": [
+      "delhi",
+      "delhi",
+      "india"
+    ],
+    "isKnown": true
+  }
+}
