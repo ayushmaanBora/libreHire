@@ -1,5 +1,6 @@
 // src/app/api/profile/route.ts
 // Deep-dive assessment for a specific GitHub username — like Vamo's profile view
+export const maxDuration = 60;
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 

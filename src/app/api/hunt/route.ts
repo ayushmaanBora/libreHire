@@ -1,6 +1,6 @@
 // src/app/api/hunt/route.ts
+export const maxDuration = 60;
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
 // ─────────────────────────────────────────────────────────────────────────────
