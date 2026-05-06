@@ -1,6 +1,8 @@
 # LibreHire
 
-**LibreHire** is an open-source tool designed to help technical recruiters and engineering managers discover skilled developers on GitHub. It replaces expensive, closed-source recruitment platforms by providing a transparent, self-hosted alternative that puts the user in control of their own data and API keys.
+**LibreHire** is an open-source tool designed to help technical recruiters and engineering managers discover skilled developers on GitHub. It replaces expensive, closed-source recruitment platforms by providing a transparent alternative that puts the user in control of their own data and API keys.
+
+🚀 **Live Demo**: [https://librehire.getxeneva.com](https://librehire.getxeneva.com)
 
 ---
 
@@ -36,7 +38,7 @@ We enforce strict location filtering and exact tech-stack alignment (e.g., disti
 
 ## 🚀 Getting Started
 
-LibreHire is a Next.js application that runs entirely on your machine.
+You can use the live version at [librehire.getxeneva.com](https://librehire.getxeneva.com) or run it locally on your machine.
 
 ### Prerequisites
 - **Node.js**: Version 18 or higher.
