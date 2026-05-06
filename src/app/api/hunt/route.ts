@@ -604,7 +604,7 @@ async function evaluateSemanticMatch(
           ? `\nIMPORTANT: The user is searching for a specific person ("${query}"). Rank the exact matched person first in orderedHandles.`
           : '';
 
-  const prompt = `You are an elite technical recruiter AI (a semantic search engine).
+  const rawPrompt = `You are an elite technical recruiter AI (a semantic search engine).
 Your goal is to evaluate developers based on their actual project experience, repositories, and technical background.
 We need to find candidates who have deep, niche expertise aligning with this search intent: "${query}"${personRerankNote}
 
@@ -630,6 +630,8 @@ ${JSON.stringify(candidates.map(c => ({
 
 Return ONLY JSON:
 {"evaluations": [{"handle": "username", "score": 85, "assessment": "Built X..."}]${mode === 'person' ? ',"orderedHandles":["handle1","handle2"]' : ''}}`;
+
+  const prompt = rawPrompt.replace(/[^\x00-\x7F]/g, ' ');
 
   try {
     const result = await callAI(prompt, provider, key, baseUrl, modelName);

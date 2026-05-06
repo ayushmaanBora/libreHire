@@ -161,7 +161,7 @@ export async function POST(req: Request) {
 
         send({ type: 'progress', step: 4, total: 4, label: 'AI reviewing their entire body of work...' });
 
-        const prompt = `You are a senior technical recruiter writing a comprehensive profile assessment for a GitHub developer.
+        const rawPrompt = `You are a senior technical recruiter writing a comprehensive profile assessment for a GitHub developer.
 
 Developer: @${user.login} (${user.name || user.login})
 Bio: ${user.bio || 'No bio'}
@@ -186,6 +186,7 @@ Write a comprehensive 4-6 sentence profile assessment covering:
 
 Be specific and reference actual project names. Write in THIRD PERSON throughout (e.g. "They built...", "Their work includes...", "They have demonstrated..."). A recruiter will read this — never use "you" or "your". No hollow phrases like "passionate developer".`;
 
+        const prompt = rawPrompt.replace(/[^\x00-\x7F]/g, ' ');
         const assessment = await callAI(prompt, provider, llmKey, baseUrl, modelName);
 
         const profileData = {
