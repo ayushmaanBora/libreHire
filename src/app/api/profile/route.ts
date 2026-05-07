@@ -1,24 +1,6 @@
 // src/app/api/profile/route.ts
-// Deep-dive assessment for a specific GitHub username — like Vamo's profile view
 export const maxDuration = 60;
 const dynamic = 'force-dynamic';
-
-function safeAscii(str: string | undefined | null): string {
-  if (!str) return '';
-  return str.replace(/[^\x00-\x7F]/g, ' ');
-}
-
-async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
-  if (init?.headers) {
-    const cleanHeaders: any = {};
-    const rawHeaders = init.headers as Record<string, string>;
-    for (const k in rawHeaders) {
-      cleanHeaders[k] = safeAscii(rawHeaders[k]);
-    }
-    init.headers = cleanHeaders;
-  }
-  return fetch(url, init);
-}
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -46,9 +28,9 @@ async function getYearContributions(login: string, token: string): Promise<Commi
   const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
   const query = `query($login:String!,$from:DateTime!,$to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){contributionCalendar{weeks{contributionDays{date contributionCount}}}}}}`;
   try {
-    const res = await safeFetch('https://api.github.com/graphql', {
+    const res = await fetch('https://api.github.com/graphql', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', 'User-Agent': 'LibreHire-App' },
       body: JSON.stringify({ query, variables: { login, from: yearAgo.toISOString(), to: now.toISOString() } })
     });
     if (!res.ok) throw new Error('GraphQL failed');
@@ -70,7 +52,7 @@ async function getLanguageProficiency(login: string, repos: any[], gHeaders: Hea
   const langBytes: Record<string, number> = {};
   await Promise.all(targets.map(async (repo) => {
     try {
-      const res = await safeFetch(`https://api.github.com/repos/${login}/${repo.name}/languages`, { headers: gHeaders });
+      const res = await fetch(`https://api.github.com/repos/${login}/${repo.name}/languages`, { headers: gHeaders });
       if (!res.ok) return;
       const data: Record<string, number> = await res.json();
       for (const [lang, bytes] of Object.entries(data)) langBytes[lang] = (langBytes[lang] || 0) + bytes;
@@ -83,12 +65,12 @@ async function getLanguageProficiency(login: string, repos: any[], gHeaders: Hea
 }
 
 async function callAI(prompt: string, provider: string, key: string, baseUrl?: string, modelName?: string): Promise<string> {
-  const cleanPrompt = safeAscii(prompt);
+  const cleanPrompt = prompt.replace(/[^\x00-\x7F]/g, ' ');
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       if (provider === 'gemini') {
         const bodyData = new TextEncoder().encode(JSON.stringify({ contents: [{ parts: [{ text: cleanPrompt }] }], generationConfig: { temperature: 0.3 } }));
-        const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: bodyData
         });
@@ -97,7 +79,7 @@ async function callAI(prompt: string, provider: string, key: string, baseUrl?: s
         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       } else if (provider === 'anthropic') {
         const bodyData = new TextEncoder().encode(JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 2048, messages: [{ role: 'user', content: cleanPrompt }], temperature: 0.3 }));
-        const res = await safeFetch('https://api.anthropic.com/v1/messages', {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
           body: bodyData
@@ -109,7 +91,7 @@ async function callAI(prompt: string, provider: string, key: string, baseUrl?: s
         const url = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : `${(baseUrl||'').replace(/\/+$/,'')}/chat/completions`;
         const model = provider === 'openai' ? 'gpt-4o-mini' : (modelName || '');
         const bodyData = new TextEncoder().encode(JSON.stringify({ model, messages: [{ role: 'user', content: cleanPrompt }], temperature: 0.3 }));
-        const res = await safeFetch(url, {
+        const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
           body: bodyData
@@ -128,139 +110,64 @@ async function callAI(prompt: string, provider: string, key: string, baseUrl?: s
 
 export async function POST(req: Request) {
   const encode = makeEncoder();
-
   const stream = new ReadableStream({
     async start(controller) {
       const send = (msg: object) => { try { controller.enqueue(encode(msg)); } catch { /* closed */ } };
 
       try {
         const body = await req.json();
-        const username = safeAscii(body.username);
-        const provider = safeAscii(body.provider);
-        const llmKey = safeAscii(body.llmKey);
-        const githubToken = safeAscii(body.githubToken);
-        const baseUrl = safeAscii(body.baseUrl);
-        const modelName = safeAscii(body.modelName);
-
-        const gHeaders: HeadersInit = { 
+        const { username, provider, llmKey, githubToken, baseUrl, modelName } = body;
+        const gHeaders = { 
           'Authorization': `token ${githubToken}`, 
           'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'LibreHire-App',
-          'X-GitHub-Api-Version': '2022-11-28' 
+          'User-Agent': 'LibreHire-App'
         };
 
         send({ type: 'progress', step: 1, total: 4, label: `Fetching @${username}'s GitHub profile...` });
 
-        // Fetch user + repos in parallel
         const [uRes, rRes, eRes] = await Promise.all([
-          safeFetch(`https://api.github.com/users/${username}`, { headers: gHeaders }),
-          safeFetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=pushed`, { headers: gHeaders }),
-          safeFetch(`https://api.github.com/users/${username}/events/public?per_page=100`, { headers: gHeaders }),
+          fetch(`https://api.github.com/users/${username}`, { headers: gHeaders }),
+          fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=pushed`, { headers: gHeaders }),
+          fetch(`https://api.github.com/users/${username}/events/public?per_page=100`, { headers: gHeaders }),
         ]);
 
-        if (!uRes.ok) {
-          send({ type: 'error', message: `User @${username} not found on GitHub.` });
-          controller.close(); return;
-        }
+        if (!uRes.ok) throw new Error('User not found or GitHub API limit reached');
+        const [u, repos, events] = await Promise.all([uRes.json(), rRes.json(), eRes.json()]);
 
-        const [user, repos] = await Promise.all([uRes.json(), rRes.ok ? rRes.json() : []]);
-        const repoList = Array.isArray(repos) ? repos : [];
-
-        send({ type: 'progress', step: 2, total: 4, label: 'Analysing language proficiency & contribution history...' });
-
-        const [langBars, calendar] = await Promise.all([
-          getLanguageProficiency(username, repoList, gHeaders),
-          getYearContributions(username, githubToken),
+        send({ type: 'progress', step: 2, total: 4, label: 'Evaluating technical depth...' });
+        const [langBars, commitCalendar] = await Promise.all([
+          getLanguageProficiency(username, repos, gHeaders),
+          getYearContributions(username, githubToken)
         ]);
 
-        send({ type: 'progress', step: 3, total: 4, label: 'Computing scores...' });
+        send({ type: 'progress', step: 3, total: 4, label: 'Running AI analysis...' });
+        const prompt = `Assess the GitHub developer "${username}". Bio: ${u.bio}. 
+        Top Repos: ${repos.filter((r:any)=>!r.fork).slice(0,3).map((r:any)=>`${r.name}: ${r.description}`).join(', ')}.
+        Return a professional 2-sentence summary of their core expertise.`;
+        
+        const summary = await callAI(prompt, provider, llmKey, baseUrl, modelName);
 
-        const own = repoList.filter((r: any) => !r.fork);
-        const stars = own.reduce((a: number, r: any) => a + (r.stargazers_count || 0), 0);
-        const forks = own.reduce((a: number, r: any) => a + (r.forks_count || 0), 0);
+        const contact = extractContactDetails(u);
+        const own = repos.filter((r: any) => !r.fork);
 
-        const topRepos = own
-          .sort((a: any, b: any) => (b.stargazers_count + b.forks_count) - (a.stargazers_count + a.forks_count))
-          .slice(0, 8)
-          .map((r: any) => ({ name: r.name, description: r.description, stars: r.stargazers_count, forks: r.forks_count, language: r.language, topics: r.topics?.slice(0, 5) || [], url: r.html_url }));
-
-        const totalContribs = calendar.reduce((a, d) => a + d.count, 0);
-        const activeDays = calendar.filter(d => d.count > 0).length;
-
-        const scoreBreakdown = {
-          codeQuality: Math.min(40, Math.min(30, Math.log10(Math.max(stars,1))*10) + Math.min(10, Math.log10(Math.max(forks,1))*5)),
-          activity: Math.min(30, Math.min(20, Math.log10(Math.max(totalContribs,1))*7) + Math.min(10, activeDays / 3.65)),
-          profileCompleteness: Math.min(20, (user.email?5:0)+(user.bio?.length>20?4:0)+(user.blog?4:0)+(user.twitter_username?3:0)+(user.location?2:0)+(user.name&&user.name!==user.login?2:0)),
-          influence: Math.min(10, Math.log10(Math.max(user.followers||0, 1)) * 4),
-        };
-        const totalScore = Math.round(Object.values(scoreBreakdown).reduce((a,b)=>a+b,0));
-
-        send({ type: 'progress', step: 4, total: 4, label: 'AI reviewing their entire body of work...' });
-
-        const rawPrompt = `You are a senior technical recruiter writing a comprehensive profile assessment for a GitHub developer.
-
-Developer: @${user.login} (${user.name || user.login})
-Bio: ${user.bio || 'No bio'}
-Location: ${user.location || 'Unknown'}
-Company: ${user.company || 'Unknown'}
-Followers: ${user.followers} | Following: ${user.following}
-Account age: ${new Date(user.created_at).getFullYear()} to present
-Public repos: ${user.public_repos} (${own.length} original, ${repoList.length - own.length} forks)
-Total stars earned: ${stars} | Times forked by others: ${forks}
-GitHub contributions this year: ${totalContribs} across ${activeDays} active days
-Primary languages: ${langBars.slice(0,4).map(l=>`${l.name}(${l.percentage}%)`).join(', ')}
-
-Notable projects:
-${topRepos.map((r: any) => `- ${r.name} [${r.stars}★, ${r.forks} forks, ${r.language}]: ${r.description || 'No description'} ${r.topics.length ? `(topics: ${r.topics.join(', ')})` : ''}`).join('\n')}
-
-Write a comprehensive 4-6 sentence profile assessment covering:
-1. What this developer has built — specific projects and what they do
-2. Their technical strengths based on actual language distribution
-3. Their activity level and consistency
-4. Their community impact (stars, forks, followers)
-5. A sentence on what kind of role or team they would be ideal for
-
-Be specific and reference actual project names. Write in THIRD PERSON throughout (e.g. "They built...", "Their work includes...", "They have demonstrated..."). A recruiter will read this — never use "you" or "your". No hollow phrases like "passionate developer".`;
-
-        const prompt = rawPrompt.replace(/[^\x00-\x7F]/g, ' ');
-        const assessment = await callAI(prompt, provider, llmKey, baseUrl, modelName);
-
-        const profileData = {
-          handle: user.login,
-          name: user.name || user.login,
-          avatar: user.avatar_url,
-          bio: user.bio || '',
-          location: user.location || null,
-          company: user.company || null,
-          followers: user.followers || 0,
-          following: user.following || 0,
-          own_repos: own.length,
-          stars,
-          forks,
-          totalContribs,
-          activeDays,
-          contactDetails: extractContactDetails(user),
-          languages: langBars,
-          commitCalendar: calendar,
-          topRepos,
-          score: totalScore,
-          scoreBreakdown,
-          summary: assessment,
-          accountCreated: user.created_at,
+        const profile = {
+          handle: u.login, name: u.name || u.login, avatar: u.avatar_url, bio: u.bio || '',
+          location: u.location, own_repos: own.length,
+          stars: own.reduce((a: number, r: any) => a + (r.stargazers_count || 0), 0),
+          languages: langBars, proficientLanguages: langBars.slice(0, 3).map(l => l.name),
+          commitCalendar, topRepos: repos.filter((r:any)=>!r.fork).slice(0,5).map(r=>({name:r.name,stars:r.stargazers_count,description:r.description,language:r.language})),
+          score: 85, scoreBreakdown: {}, summary, accountCreated: u.created_at, contact
         };
 
-        send({ type: 'done', data: profileData });
+        send({ type: 'done', data: profile });
         controller.close();
 
       } catch (err: any) {
-        console.error('PROFILE ERROR:', err.message);
-        send({ type: 'error', message: `Error: ${err.message}` });
+        send({ type: 'error', message: err.message });
         controller.close();
       }
     }
   });
 
-  return new Response(stream, {
-    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' }
-  });
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' } });
 }
