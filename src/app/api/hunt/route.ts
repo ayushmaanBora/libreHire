@@ -792,7 +792,12 @@ export async function POST(req: Request) {
         const baseUrl = safeAscii(body.baseUrl);
         const modelName = safeAscii(body.modelName);
 
-        const gHeaders: HeadersInit = { Authorization: `token ${githubToken}`, 'X-GitHub-Api-Version': '2022-11-28' };
+        const gHeaders: HeadersInit = { 
+          'Authorization': `token ${githubToken}`, 
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'LibreHire-App',
+          'X-GitHub-Api-Version': '2022-11-28' 
+        };
         const token = githubToken;
 
         // ── DETERMINISTIC MODE: bypass AI for query generation ──────────────
