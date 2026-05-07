@@ -1275,8 +1275,8 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
         controller.close();
 
       } catch (err: any) {
-        console.error('ENGINE ERROR:', err.stack || err.message);
-        send({ type: 'error', message: `ENGINE ERROR: ${err.message}\n\nStack: ${err.stack || 'No stack'}` });
+        console.error('ENGINE ERROR:', err.message);
+        send({ type: 'error', message: `ENGINE ERROR: ${err.message}` });
         controller.close();
       }
     }
