@@ -1,15 +1,22 @@
 {
   "jobProfile": "Kernel / Low-Level",
   "languages": [
+    "C",
+    "C++",
     "Rust"
   ],
   "country": "India",
   "state": "Delhi",
   "city": "Delhi",
   "queries": [
+    "location:\"delhi\" language:\"C\" type:user",
+    "location:\"delhi\" language:\"C++\" type:user",
     "location:\"delhi\" language:\"Rust\" type:user",
+    "location:\"new delhi\" language:\"C\" type:user",
+    "location:\"new delhi\" language:\"C++\" type:user",
     "location:\"new delhi\" language:\"Rust\" type:user",
-    "location:\"ncr\" language:\"Rust\" type:user"
+    "location:\"ncr\" language:\"C\" type:user",
+    "location:\"ncr\" language:\"C++\" type:user"
   ],
   "locationInfo": {
     "canonical": "Delhi",
