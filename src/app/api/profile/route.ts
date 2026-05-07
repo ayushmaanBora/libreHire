@@ -1,6 +1,24 @@
 // src/app/api/profile/route.ts
 // Deep-dive assessment for a specific GitHub username — like Vamo's profile view
 export const maxDuration = 60;
+const dynamic = 'force-dynamic';
+
+function safeAscii(str: string | undefined | null): string {
+  if (!str) return '';
+  return str.replace(/[^\x00-\x7F]/g, ' ');
+}
+
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  if (init?.headers) {
+    const cleanHeaders: any = {};
+    const rawHeaders = init.headers as Record<string, string>;
+    for (const k in rawHeaders) {
+      cleanHeaders[k] = safeAscii(rawHeaders[k]);
+    }
+    init.headers = cleanHeaders;
+  }
+  return fetch(url, init);
+}
 
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
@@ -28,7 +46,7 @@ async function getYearContributions(login: string, token: string): Promise<Commi
   const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
   const query = `query($login:String!,$from:DateTime!,$to:DateTime!){user(login:$login){contributionsCollection(from:$from,to:$to){contributionCalendar{weeks{contributionDays{date contributionCount}}}}}}`;
   try {
-    const res = await fetch('https://api.github.com/graphql', {
+    const res = await safeFetch('https://api.github.com/graphql', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ query, variables: { login, from: yearAgo.toISOString(), to: now.toISOString() } })
@@ -52,7 +70,7 @@ async function getLanguageProficiency(login: string, repos: any[], gHeaders: Hea
   const langBytes: Record<string, number> = {};
   await Promise.all(targets.map(async (repo) => {
     try {
-      const res = await fetch(`https://api.github.com/repos/${login}/${repo.name}/languages`, { headers: gHeaders });
+      const res = await safeFetch(`https://api.github.com/repos/${login}/${repo.name}/languages`, { headers: gHeaders });
       if (!res.ok) return;
       const data: Record<string, number> = await res.json();
       for (const [lang, bytes] of Object.entries(data)) langBytes[lang] = (langBytes[lang] || 0) + bytes;
@@ -65,21 +83,24 @@ async function getLanguageProficiency(login: string, repos: any[], gHeaders: Hea
 }
 
 async function callAI(prompt: string, provider: string, key: string, baseUrl?: string, modelName?: string): Promise<string> {
+  const cleanPrompt = safeAscii(prompt);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       if (provider === 'gemini') {
-        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+        const bodyData = new TextEncoder().encode(JSON.stringify({ contents: [{ parts: [{ text: cleanPrompt }] }], generationConfig: { temperature: 0.3 } }));
+        const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3 } })
+          body: bodyData
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error.message);
         return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
       } else if (provider === 'anthropic') {
-        const res = await fetch('https://api.anthropic.com/v1/messages', {
+        const bodyData = new TextEncoder().encode(JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 2048, messages: [{ role: 'user', content: cleanPrompt }], temperature: 0.3 }));
+        const res = await safeFetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 2048, messages: [{ role: 'user', content: prompt }], temperature: 0.3 })
+          body: bodyData
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error.message);
@@ -87,10 +108,11 @@ async function callAI(prompt: string, provider: string, key: string, baseUrl?: s
       } else {
         const url = provider === 'openai' ? 'https://api.openai.com/v1/chat/completions' : `${(baseUrl||'').replace(/\/+$/,'')}/chat/completions`;
         const model = provider === 'openai' ? 'gpt-4o-mini' : (modelName || '');
-        const res = await fetch(url, {
+        const bodyData = new TextEncoder().encode(JSON.stringify({ model, messages: [{ role: 'user', content: cleanPrompt }], temperature: 0.3 }));
+        const res = await safeFetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-          body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0.3 })
+          body: bodyData
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error.message);
@@ -112,15 +134,23 @@ export async function POST(req: Request) {
       const send = (msg: object) => { try { controller.enqueue(encode(msg)); } catch { /* closed */ } };
 
       try {
-        const { username, provider, llmKey, githubToken, baseUrl, modelName } = await req.json();
+        const body = await req.json();
+        const username = safeAscii(body.username);
+        const provider = safeAscii(body.provider);
+        const llmKey = safeAscii(body.llmKey);
+        const githubToken = safeAscii(body.githubToken);
+        const baseUrl = safeAscii(body.baseUrl);
+        const modelName = safeAscii(body.modelName);
+
         const gHeaders: HeadersInit = { Authorization: `token ${githubToken}`, 'X-GitHub-Api-Version': '2022-11-28' };
 
         send({ type: 'progress', step: 1, total: 4, label: `Fetching @${username}'s GitHub profile...` });
 
         // Fetch user + repos in parallel
-        const [uRes, rRes] = await Promise.all([
-          fetch(`https://api.github.com/users/${username}`, { headers: gHeaders }),
-          fetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=pushed`, { headers: gHeaders }),
+        const [uRes, rRes, eRes] = await Promise.all([
+          safeFetch(`https://api.github.com/users/${username}`, { headers: gHeaders }),
+          safeFetch(`https://api.github.com/users/${username}/repos?per_page=100&sort=pushed`, { headers: gHeaders }),
+          safeFetch(`https://api.github.com/users/${username}/events/public?per_page=100`, { headers: gHeaders }),
         ]);
 
         if (!uRes.ok) {

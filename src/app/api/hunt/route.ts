@@ -1,5 +1,23 @@
 // src/app/api/hunt/route.ts
-export const maxDuration = 60;
+const maxDuration = 60;
+const dynamic = 'force-dynamic';
+
+function safeAscii(str: string | undefined | null): string {
+  if (!str) return '';
+  return str.replace(/[^\x00-\x7F]/g, ' ');
+}
+
+async function safeFetch(url: string, init?: RequestInit): Promise<Response> {
+  if (init?.headers) {
+    const cleanHeaders: any = {};
+    const rawHeaders = init.headers as Record<string, string>;
+    for (const k in rawHeaders) {
+      cleanHeaders[k] = safeAscii(rawHeaders[k]);
+    }
+    init.headers = cleanHeaders;
+  }
+  return fetch(url, init);
+}
 const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 // ─────────────────────────────────────────────────────────────────────────────
 // TYPES
@@ -241,7 +259,7 @@ function detectQueryMode(query: string): { mode: 'technical'|'person'|'open'; co
 
 async function callGemini(prompt: string, key: string) {
   const bodyData = new TextEncoder().encode(JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } }));
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
+  const res = await safeFetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: bodyData
   });
@@ -252,7 +270,7 @@ async function callGemini(prompt: string, key: string) {
 
 async function callClaude(prompt: string, key: string) {
   const bodyData = new TextEncoder().encode(JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 4096, messages: [{ role: 'user', content: prompt }], temperature: 0.1 }));
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await safeFetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
     body: bodyData
@@ -266,7 +284,7 @@ async function callUniversal(prompt: string, key: string, baseUrl: string, model
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const url = cleanBase.endsWith('/chat/completions') ? cleanBase : `${cleanBase}/chat/completions`;
   const bodyData = new TextEncoder().encode(JSON.stringify({ model: modelName || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.1, response_format: { type: 'json_object' } }));
-  const res = await fetch(url, {
+  const res = await safeFetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
     body: bodyData
@@ -353,7 +371,7 @@ async function getYearContributions(login: string, token: string): Promise<Commi
   `;
 
   try {
-    const res = await fetch('https://api.github.com/graphql', {
+    const res = await safeFetch('https://api.github.com/graphql', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -768,7 +786,12 @@ export async function POST(req: Request) {
 
       try {
         const body = await req.json();
-        const { provider, llmKey, githubToken, baseUrl, modelName } = body;
+        const provider = safeAscii(body.provider);
+        const llmKey = safeAscii(body.llmKey);
+        const githubToken = safeAscii(body.githubToken);
+        const baseUrl = safeAscii(body.baseUrl);
+        const modelName = safeAscii(body.modelName);
+
         const gHeaders: HeadersInit = { Authorization: `token ${githubToken}`, 'X-GitHub-Api-Version': '2022-11-28' };
         const token = githubToken;
 
@@ -1073,7 +1096,7 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
 
         const searchResults = await Promise.all(
           params.queries.map((q: string) =>
-            fetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=20&sort=repositories&order=desc`, { headers: gHeaders })
+            safeFetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=20&sort=repositories&order=desc`, { headers: gHeaders })
               .then(r => r.json()).catch(() => ({ items: [] }))
           )
         );
@@ -1104,9 +1127,9 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
           const res = await Promise.all(batch.map(async (item) => {
             try {
               const [uRes, rRes, eRes] = await Promise.all([
-                fetch(`https://api.github.com/users/${item.login}`, { headers: gHeaders }),
-                fetch(`https://api.github.com/users/${item.login}/repos?per_page=60&sort=pushed`, { headers: gHeaders }),
-                fetch(`https://api.github.com/users/${item.login}/events/public?per_page=60`, { headers: gHeaders }),
+                safeFetch(`https://api.github.com/users/${item.login}`, { headers: gHeaders }),
+                safeFetch(`https://api.github.com/users/${item.login}/repos?per_page=60&sort=pushed`, { headers: gHeaders }),
+                safeFetch(`https://api.github.com/users/${item.login}/events/public?per_page=60`, { headers: gHeaders }),
               ]);
               const [u, repos, events] = await Promise.all([
                 uRes.ok ? uRes.json() : null,
