@@ -707,8 +707,8 @@ export default function Home() {
       {loading && <LoadingScreen progress={progress} query={currentQuery} />}
 
       {/* NAVBAR */}
-      <header className="border-b-4 border-black px-8 py-5 flex justify-between items-center">
-        <div className="flex items-center gap-10">
+      <header className="border-b-4 border-black px-4 md:px-8 py-4 md:py-5 flex flex-col md:flex-row justify-between items-center gap-4">
+        <div className="flex flex-col md:flex-row items-center gap-2 md:gap-10 w-full md:w-auto">
           <h1
             onClick={() => {
               setActiveView('search');
@@ -723,7 +723,7 @@ export default function Home() {
             }}
             className="text-2xl font-black tracking-tighter cursor-pointer hover:opacity-60 italic uppercase"
           >LIBRE-HIRE</h1>
-          <nav className="hidden md:flex gap-6 text-xs font-mono uppercase tracking-widest text-gray-500">
+          <nav className="flex gap-4 md:gap-6 text-[10px] md:text-xs font-mono uppercase tracking-widest text-gray-500">
             {(['how-to','about'] as const).map(v=>(
               <button key={v} onClick={()=>setActiveView(v)} className={`hover:text-black transition-colors ${activeView===v?'text-black font-bold':''}`}>
                 {v==='how-to'?'How to Use':'About'}
@@ -731,7 +731,7 @@ export default function Home() {
             ))}
           </nav>
         </div>
-        <button onClick={()=>setIsConfigOpen(true)} className="border-2 border-black px-4 py-2 text-xs font-mono font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors">
+        <button onClick={()=>setIsConfigOpen(true)} className="border-2 border-black px-4 py-2 text-[10px] md:text-xs font-mono font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors w-full md:w-auto">
           Configure Engine
         </button>
       </header>
@@ -784,8 +784,7 @@ export default function Home() {
                   <input
                     type="text" value={query} onChange={e=>setQuery(e.target.value)}
                     placeholder="kernel developers in bangalore"
-                    className="w-full text-2xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pr-0 md:pr-32 placeholder:text-gray-200"
-                    autoFocus
+                    className="w-full text-xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pr-0 md:pr-32 placeholder:text-gray-200"
                   />
                   <button type="submit" disabled={loading}
                     className="w-full md:w-auto md:absolute md:right-0 md:bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
@@ -837,8 +836,7 @@ export default function Home() {
                   <input
                     type="text" value={username} onChange={e=>setUsername(e.target.value)}
                     placeholder="torvalds"
-                    className="w-full text-3xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pl-10 pr-0 md:pr-40 placeholder:text-gray-200"
-                    autoFocus
+                    className="w-full text-xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pl-10 pr-0 md:pr-40 placeholder:text-gray-200"
                   />
                   <button type="submit" disabled={loading}
                     className="w-full md:w-auto md:absolute md:right-0 md:bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
@@ -1047,8 +1045,8 @@ export default function Home() {
       {/* CONFIG MODAL */}
       {isConfigOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={e=>{if(e.target===e.currentTarget)setIsConfigOpen(false);}}>
-          <div className="bg-white border-4 border-black p-8 w-full max-w-md shadow-[8px_8px_0px_0px_#000]">
-            <h2 className="text-2xl font-black uppercase tracking-tighter mb-6 border-b-2 border-black pb-3">Engine Configuration</h2>
+          <div className="bg-white border-4 border-black p-5 md:p-8 w-full max-w-md shadow-[4px_4px_0px_0px_#000] md:shadow-[8px_8px_0px_0px_#000] max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl md:text-2xl font-black uppercase tracking-tighter mb-6 border-b-2 border-black pb-3">Engine Configuration</h2>
             <div className="space-y-5 font-mono text-sm">
               <div>
                 <label className="block font-bold mb-1.5 uppercase tracking-widest text-xs">AI Provider</label>
