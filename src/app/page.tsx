@@ -324,7 +324,7 @@ function DeveloperCard({ profile, rank }: { profile:DeveloperProfile; rank:numbe
           </span>
         </div>
       )}
-      <div className="flex justify-between items-start gap-6 mb-4">
+      <div className="flex flex-col md:flex-row justify-between items-start gap-6 mb-4">
         <div className="flex items-start gap-5 flex-1 min-w-0">
           <img src={profile.avatar} alt={profile.handle} className="w-20 h-20 border-4 border-black object-cover flex-shrink-0" />
           <div className="min-w-0">
@@ -780,15 +780,15 @@ export default function Home() {
             {/* HUNT TAB */}
             {activeTab === 'hunt' && (
               <div>
-                <form onSubmit={handleHunt} className="relative flex items-end mb-4">
+                <form onSubmit={handleHunt} className="relative flex flex-col md:flex-row md:items-end mb-4 md:gap-0 gap-4">
                   <input
                     type="text" value={query} onChange={e=>setQuery(e.target.value)}
                     placeholder="kernel developers in bangalore"
-                    className="w-full text-3xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pr-32 placeholder:text-gray-200"
+                    className="w-full text-2xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pr-0 md:pr-32 placeholder:text-gray-200"
                     autoFocus
                   />
                   <button type="submit" disabled={loading}
-                    className="absolute right-0 bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
+                    className="w-full md:w-auto md:absolute md:right-0 md:bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
                     HUNT
                   </button>
                 </form>
@@ -832,16 +832,16 @@ export default function Home() {
                     Enter any GitHub username to get a full AI-powered profile assessment — their projects, tech depth, activity, and fit. Perfect when you already have a candidate in mind.
                   </p>
                 </div>
-                <form onSubmit={handleProfileLookup} className="relative flex items-end mb-10">
-                  <div className="absolute left-0 bottom-4 text-gray-400 font-mono text-3xl md:text-4xl font-bold">@</div>
+                <form onSubmit={handleProfileLookup} className="relative flex flex-col md:flex-row md:items-end mb-10 md:gap-0 gap-4">
+                  <div className="absolute left-0 top-1 md:top-auto md:bottom-4 text-gray-400 font-mono text-3xl md:text-4xl font-bold">@</div>
                   <input
                     type="text" value={username} onChange={e=>setUsername(e.target.value)}
                     placeholder="torvalds"
-                    className="w-full text-3xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pl-10 pr-40 placeholder:text-gray-200"
+                    className="w-full text-3xl md:text-4xl font-bold bg-transparent border-b-4 border-black outline-none pb-4 pl-10 pr-0 md:pr-40 placeholder:text-gray-200"
                     autoFocus
                   />
                   <button type="submit" disabled={loading}
-                    className="absolute right-0 bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
+                    className="w-full md:w-auto md:absolute md:right-0 md:bottom-3 bg-black text-white px-6 py-3 font-mono font-bold tracking-widest text-sm hover:bg-gray-800 disabled:opacity-40 transition-colors">
                     ANALYSE
                   </button>
                 </form>
