@@ -242,7 +242,7 @@ function detectQueryMode(query: string): { mode: 'technical'|'person'|'open'; co
 async function callGemini(prompt: string, key: string) {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1 } })
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0 } })
   });
   const data = await res.json();
   if (data.error) throw new Error(`Gemini: ${data.error.message}`);
@@ -253,7 +253,7 @@ async function callClaude(prompt: string, key: string) {
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-    body: JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 4096, messages: [{ role: 'user', content: prompt }], temperature: 0.1 })
+    body: JSON.stringify({ model: 'claude-3-5-haiku-latest', max_tokens: 4096, messages: [{ role: 'user', content: prompt }], temperature: 0 })
   });
   const data = await res.json();
   if (data.error) throw new Error(`Claude: ${data.error.message}`);
@@ -266,7 +266,7 @@ async function callUniversal(prompt: string, key: string, baseUrl: string, model
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-    body: JSON.stringify({ model: modelName || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.1, response_format: { type: 'json_object' } })
+    body: JSON.stringify({ model: modelName || 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0, response_format: { type: 'json_object' } })
   });
   const data = await res.json();
   if (data.error) throw new Error(`API: ${data.error.message || JSON.stringify(data.error)}`);
@@ -434,129 +434,120 @@ function computeScore(
   locationInfo?: { canonical: string; variants: string[]; isKnown: boolean } | null,
   companySignal?: string | null,
   semanticEval?: { score: number, assessment: string }
-): { total: number; breakdown: ScoreBreakdown & { locationMatch: number, semanticMatch: number } } {
+): { displayScore: number; relevanceScore: number; breakdown: ScoreBreakdown & { locationMatch: number, semanticMatch: number } } {
   const bd: ScoreBreakdown & { locationMatch: number, semanticMatch: number } = { relevance: 0, activityRecency: 0, codeQuality: 0, profileSignal: 0, locationMatch: 0, semanticMatch: 0 };
   const topLangs = langBars.map(l => l.name.toLowerCase());
   const bioText = (user.bio || '').toLowerCase();
   const nameText = (user.name || user.login || '').toLowerCase();
 
-  // RELEVANCE
+  // ── RELEVANCE (sorting only, NOT shown as score) ──────────────────────
   const langNameSet = new Set(langBars.map(l => l.name.toLowerCase()));
   const top3Langs = topLangs.slice(0, 3);
+  let relevanceScore = 0;
 
   if (mode === 'person') {
     const allText = bioText + ' ' + nameText + ' ' + (user.company || '').toLowerCase();
+    const loginLower = (user.login || '').toLowerCase();
     const hits = queryTerms.filter(t => allText.includes(t)).length;
-    bd.relevance = Math.min(40, (hits / Math.max(queryTerms.length, 1)) * 40);
-
+    relevanceScore = Math.min(40, (hits / Math.max(queryTerms.length, 1)) * 40);
+    const queryLower = queryTerms.join(' ');
+    const loginMatch = queryTerms.some(t => loginLower === t);
+    const fullNameMatch = nameText && queryLower.includes(nameText);
+    const nameMatch = queryTerms.some(t => loginLower === t || nameText.includes(t));
+    if (loginMatch) relevanceScore = 40;
+    else if (fullNameMatch) relevanceScore = Math.max(relevanceScore, 38);
+    else if (nameMatch) relevanceScore = Math.max(relevanceScore, 30);
   } else if (constraints) {
-    // Technical mode — exact language matching, no substring fuzzing
     const mustL = constraints.must.map(l => l.toLowerCase());
     const negL  = constraints.negative.map(l => l.toLowerCase());
     const primaryLang = topLangs[0] || '';
-
-    // Negative language penalty: if their TOP language is explicitly negative, penalise hard
     const primaryIsNeg = negL.some(n => langExact(primaryLang, n));
     const negPct = langBars.filter(l => negL.some(n => langExact(l.name, n))).reduce((a, l) => a + l.percentage, 0);
     if (primaryIsNeg && negPct > 40) {
-      bd.relevance = Math.max(0, 5 - Math.floor(negPct / 15));
+      relevanceScore = Math.max(0, 5 - Math.floor(negPct / 15));
     } else {
-      // Score by how much of their codebase is in required languages (percentage-weighted)
       let mustPct = 0;
-      for (const m of mustL) {
-        const bar = langBars.find(l => langExact(l.name, m));
-        mustPct += bar?.percentage || 0;
-      }
-      // Primary match: is their #1 language one of the must-list?
+      for (const m of mustL) { const bar = langBars.find(l => langExact(l.name, m)); mustPct += bar?.percentage || 0; }
       const primaryInMust = mustL.some(m => langExact(primaryLang, m));
       const top3InMust = top3Langs.some(l => mustL.some(m => langExact(l, m)));
-
-      if (primaryInMust)       bd.relevance = Math.min(40, 28 + Math.min(12, mustPct / 10));
-      else if (top3InMust)     bd.relevance = Math.min(40, 16 + Math.min(12, mustPct / 10));
-      else                     bd.relevance = Math.min(12, mustPct / 5);
-
-      // Bio keyword bonus — only role words, not language names (already scored above)
+      if (primaryInMust) relevanceScore = Math.min(40, 28 + Math.min(12, mustPct / 10));
+      else if (top3InMust) relevanceScore = Math.min(40, 16 + Math.min(12, mustPct / 10));
+      else relevanceScore = Math.min(12, mustPct / 5);
       const roleTerms = queryTerms.filter(t => !mustL.includes(t) && !negL.includes(t));
-      bd.relevance = Math.min(40, bd.relevance + roleTerms.filter(t => bioText.includes(t)).length * 2);
+      relevanceScore = Math.min(40, relevanceScore + roleTerms.filter(t => bioText.includes(t)).length * 2);
     }
-
   } else {
-    // Open / multi-language mode
-    // Use EXACT language name matching — never substring
     const langTerms = queryTerms.filter(t => langNameSet.has(t));
     const roleTerms = queryTerms.filter(t => !langTerms.includes(t));
     const primaryLangTerm = langTerms[0] || '';
     const secondaryLangTerms = langTerms.slice(1);
-
-    // Primary: percentage-weighted score (40 → 0)
     const primaryBar = langBars.find(l => langExact(l.name, primaryLangTerm));
     const primaryPct = primaryBar?.percentage || 0;
     const primaryRank = primaryBar ? langBars.indexOf(primaryBar) : 99;
-    const primaryScore = !primaryLangTerm ? 20  // no lang specified → open query
-      : primaryPct >= 30 ? 32
-      : primaryPct >= 15 ? 26
-      : primaryPct >= 5  ? 18
-      : primaryPct >= 1  ? 8
-      : 0;
-
-    // Rank bonus: if it's their #1 or #2 language
+    const primaryScore = !primaryLangTerm ? 20 : primaryPct >= 30 ? 32 : primaryPct >= 15 ? 26 : primaryPct >= 5 ? 18 : primaryPct >= 1 ? 8 : 0;
     const rankBonus = primaryRank === 0 ? 8 : primaryRank === 1 ? 4 : 0;
-
-    // Secondary: 4 pts each, capped at 8
-    const secondaryScore = Math.min(8, secondaryLangTerms.filter(t => {
-      const bar = langBars.find(l => langExact(l.name, t));
-      return bar && bar.percentage >= 1;
-    }).length * 4);
-
+    const secondaryScore = Math.min(8, secondaryLangTerms.filter(t => { const bar = langBars.find(l => langExact(l.name, t)); return bar && bar.percentage >= 1; }).length * 4);
     const bioScore = Math.min(4, roleTerms.filter(t => bioText.includes(t)).length * 2);
-    bd.relevance = Math.min(40, Math.max(0, primaryScore + rankBonus + secondaryScore + bioScore));
+    relevanceScore = Math.min(40, Math.max(0, primaryScore + rankBonus + secondaryScore + bioScore));
   }
-
-  // COMPANY MATCH BONUS
   if (companySignal && mode !== 'person') {
     const cLower = companySignal.toLowerCase();
     const profileText = [(user.company || ''), (user.bio || ''), (user.login || '')].join(' ').toLowerCase();
-    if (profileText.includes(cLower)) bd.relevance = Math.min(40, bd.relevance + 12);
+    if (profileText.includes(cLower)) relevanceScore = Math.min(40, relevanceScore + 12);
   }
+  if (semanticEval) relevanceScore += (semanticEval.score / 100) * 15;
 
-  // ACTIVITY RECENCY (30 pts)
+  // ── DISPLAY SCORE: pure profile quality ────────────────────────────────
+  // Calibration targets: Torvalds(244K★)→93, Manas(678★,OS builder)→85, avg(50★)→50
+
   const now = Date.now();
-  const ev90 = events.filter(e => ['PushEvent','PullRequestEvent','CreateEvent'].includes(e.type) && new Date(e.created_at).getTime() > now - 90*86400000);
-  const ev180 = events.filter(e => ['PushEvent','PullRequestEvent'].includes(e.type) && new Date(e.created_at).getTime() > now - 180*86400000);
-  const cnt90 = ev90.reduce((a, e) => a + (e.type === 'PushEvent' ? (e.payload?.commits?.length ?? 1) : 1), 0);
-  const repos365 = repos.filter(r => !r.fork && new Date(r.pushed_at).getTime() > now - 365*86400000).length;
-  bd.activityRecency = Math.min(30, Math.min(20, Math.log10(Math.max(cnt90,1)+1)*10) + Math.min(7, repos365*1.2) + (ev180.length > ev90.length*1.2 ? 3 : 0));
-
-  // CODE QUALITY (20 pts)
   const own = repos.filter(r => !r.fork);
   const stars = own.reduce((a, r) => a + (r.stargazers_count || 0), 0);
   const forks = own.reduce((a, r) => a + (r.forks_count || 0), 0);
-  bd.codeQuality = Math.min(20, Math.min(15, Math.log10(Math.max(stars,1))*5) + Math.min(5, Math.log10(Math.max(forks,1))*3));
+  const followers = user.followers || 0;
+  const recentlyPushed = own.filter(r => new Date(r.pushed_at).getTime() > now - 365*86400000).length;
+  const avgImpact = own.length > 0 ? Math.log10(Math.max(stars / own.length, 1)) : 0;
 
-  // PROFILE SIGNAL (10 pts)
+  // CODE IMPACT (35 pts) — stars + forks + depth bonus (stars-per-repo)
+  const starPts = Math.log10(Math.max(stars, 1)) * 8;
+  const forkPts = Math.log10(Math.max(forks, 1)) * 4;
+  const depthBonus = own.length > 0 ? Math.min(12, Math.log10(Math.max(stars / own.length, 1)) * 5) : 0;
+  bd.codeQuality = Math.min(35, starPts + forkPts + depthBonus);
+
+  // INFLUENCE (25 pts) — followers + stars as social proof
+  bd.semanticMatch = Math.min(25, Math.log10(Math.max(followers, 1)) * 6 + Math.log10(Math.max(stars, 1)) * 3);
+
+  // ACTIVITY (25 pts) — recently pushed repos + impact intensity + repo diversity
+  const repoBonus = stars > 0 ? Math.min(5, Math.log10(Math.max(user.public_repos || 1, 1)) * 3) : 0;
+  bd.activityRecency = Math.min(25,
+    Math.min(10, recentlyPushed * 2) +
+    Math.min(12, avgImpact * 7) +
+    repoBonus
+  );
+
+  // PROFILE (15 pts) — completeness + reachability
   let pts = 0;
   if (user.email) pts += 3;
-  if (user.bio?.length > 20) pts += 2;
+  if (user.bio?.length > 20) pts += 3;
   if (user.blog) pts += 2;
-  if (user.twitter_username) pts += 1;
-  if (user.name && user.name !== user.login) pts += 1;
-  bd.profileSignal = Math.min(10, pts);
+  if (user.twitter_username) pts += 2;
+  if (user.name && user.name !== user.login) pts += 2;
+  if (user.location) pts += 2;
+  if (user.company) pts += 1;
+  bd.profileSignal = Math.min(15, pts);
 
-  // LOCATION: pure filter — no points up or down in score
+  // Store relevance in breakdown (NOT counted in displayScore)
+  bd.relevance = relevanceScore;
   bd.locationMatch = 0;
 
-  // SEMANTIC MATCH (NEW)
-  if (semanticEval) {
-    bd.semanticMatch = (semanticEval.score / 100) * 30; // 30 pts for pure semantic repo match
-    bd.relevance = bd.relevance * 0.25; // max 10 pts for basic keyword relevance
-  } else {
-    bd.semanticMatch = bd.relevance; // fallback if AI fails
-    bd.relevance = 0;
-  }
+  // TOTAL: code(35) + influence(25) + activity(25) + profile(15) = max 100
+  const qualityRaw = bd.codeQuality + bd.semanticMatch + bd.activityRecency + bd.profileSignal;
+  const displayScore = Math.min(100, Math.round(qualityRaw));
 
-  const rawTotal = bd.relevance + bd.semanticMatch + bd.activityRecency + bd.codeQuality + bd.profileSignal;
-  return { total: Math.max(0, Math.round(rawTotal)), breakdown: bd };
+  return { displayScore: Math.max(0, displayScore), relevanceScore: Math.max(0, relevanceScore), breakdown: bd };
 }
+
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // REPO SUMMARIZER — used for rich AI assessment
@@ -773,7 +764,7 @@ export async function POST(req: Request) {
           send({ type: 'progress', step: 1, total: 6, label: `Building targeted queries for: ${displayLabel}` });
 
           const { queries, queryTerms, constraints, locationInfo } = buildDeterministicQueries({ jobProfile, languages: languages || [], country: country || '', state: state || '', city: city || '' });
-          require('fs').writeFileSync('debug.json', JSON.stringify({ jobProfile, languages, country, state, city, queries, locationInfo }, null, 2));
+          try { require('fs').writeFileSync('debug.json', JSON.stringify({ jobProfile, languages, country, state, city, queries, locationInfo }, null, 2)); } catch { /* read-only FS on serverless — skip */ }
           console.log('[DEBUG] deterministic request received:', { jobProfile, languages, country, state, city });
           console.log('[DEBUG] queries generated:', queries);
 
@@ -781,19 +772,27 @@ export async function POST(req: Request) {
           send({ type: 'progress', step: 2, total: 6, label: `Running ${queries.length} precision searches...` });
           const searchResults = await Promise.all(
             queries.map((q: string) =>
-              fetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=100`, { headers: gHeaders })
+              fetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=100&sort=followers&order=desc`, { headers: gHeaders })
                 .then(r => r.json()).catch(() => ({ items: [] }))
             )
           );
-          const seenIds = new Set<number>();
-          const uniqueItems: any[] = [];
+          // Track how many queries each user appeared in — users in more queries
+          // have repos in more of the selected languages (the intersection we want).
+          const appearanceCount = new Map<number, number>();
+          const userMap = new Map<number, any>();
           for (const data of searchResults) {
             for (const item of (data.items || [])) {
-              if (item.type === 'User' && !seenIds.has(item.id) && uniqueItems.length < 60) {
-                seenIds.add(item.id); uniqueItems.push(item);
+              if (item.type === 'User') {
+                appearanceCount.set(item.id, (appearanceCount.get(item.id) || 0) + 1);
+                if (!userMap.has(item.id)) userMap.set(item.id, item);
               }
             }
           }
+          // Sort by appearance count DESC — users with all languages first
+          const sortedByOverlap = [...userMap.values()].sort((a, b) =>
+            (appearanceCount.get(b.id) || 0) - (appearanceCount.get(a.id) || 0)
+          );
+          const uniqueItems = sortedByOverlap.slice(0, 80); // take more, filter later
           if (!uniqueItems.length) {
             send({ type: 'error', message: 'No developers found for these filters. Try broadening location or language selection.' });
             controller.close(); return;
@@ -888,7 +887,7 @@ export async function POST(req: Request) {
           send({ type: 'progress', step: 5, total: 5, label: `Scoring ${withLangs.length} candidates...` });
           const scored = withLangs.map(({ user, repos, events, langBars }) => {
             const evalRes = semanticRes.evals[user.login];
-            const { total, breakdown } = computeScore(user, langBars, events, queryTerms, repos, constraints, 'technical', locationInfo, null, evalRes);
+            const { displayScore, relevanceScore, breakdown } = computeScore(user, langBars, events, queryTerms, repos, constraints, 'technical', locationInfo, null, evalRes);
             const own = repos.filter((r: any) => !r.fork);
             return {
               handle: user.login, name: user.name || user.login, avatar: user.avatar_url,
@@ -898,7 +897,7 @@ export async function POST(req: Request) {
               contactDetails: extractContactDetails(user), languages: langBars,
               proficientLanguages: langBars.slice(0, 3).map((l: LanguageBar) => l.name),
               commitCalendar: [] as CommitDay[], topRepos: getTopRepoSummaries(repos),
-              score: total, scoreBreakdown: breakdown, summary: evalRes?.assessment || '', accountCreated: user.created_at,
+              score: displayScore, relevance: relevanceScore, scoreBreakdown: breakdown, summary: evalRes?.assessment || '', accountCreated: user.created_at,
             };
           });
 
@@ -927,13 +926,17 @@ export async function POST(req: Request) {
             return { tier: 'primary', missingLangs: missSec };
           };
 
-          const detSorted = scored.sort((a, b) => b.score - a.score);
-          const detFull    = detSorted.filter(p => getDetTier(p).tier === 'full').map(p => ({ ...p, matchTier: 'full'    as const, missingLangs: [] as string[] }));
-          const detPartial = detSorted.filter(p => getDetTier(p).tier === 'primary').map(p => ({ ...p, matchTier: 'primary' as const, missingLangs: getDetTier(p).missingLangs }));
+          const detWithTiers = scored.map(p => {
+            const { tier, missingLangs } = getDetTier(p);
+            return { ...p, matchTier: tier, missingLangs };
+          });
           
           // STRICT STACK ALIGNMENT: We explicitly drop tier 'none' (those who lack the primary language).
-          // We'd rather return 2 highly qualified engineers than 20 frontend devs.
-          const detPresorted = [...detFull, ...detPartial].slice(0, 20);
+          // We'd rather return highly qualified engineers than irrelevant devs.
+          const detValid = detWithTiers.filter(p => p.matchTier !== 'none');
+          
+          // STRICT QUALITY RANKING: Sort strictly by quality score, ignoring match tier grouping
+          const detPresorted = detValid.sort((a, b) => b.score - a.score).slice(0, 20);
           
           if (detPresorted.length === 0) {
             send({ type: 'error', message: 'No developers found who meet the strict language requirements (≥5% primary codebase). Try removing some secondary languages.' });
@@ -974,19 +977,29 @@ export async function POST(req: Request) {
         let intentPrompt: string;
 
         if (mode === 'person') {
-          intentPrompt = `You are a GitHub search expert. Someone is trying to find a specific person on GitHub.
+          intentPrompt = `You are a GitHub search expert with extensive knowledge of the tech industry and open-source community.
+Someone is trying to find a specific person on GitHub.
 Query: "${userQuery}"
 
+CRITICAL: Use your world knowledge to identify WHO this person actually is.
+For example:
+- "founder of linux" → Linus Torvalds, GitHub username "torvalds"
+- "who built supabase" → Paul Copplestone, GitHub username "kiwicopple"
+- "creator of react" → Jordan Walke, GitHub username "jordwalke"
+- "founder of xeneva" → Manas Kamal Choudhury, GitHub username "manaskamal"
+
 Generate 4 GitHub search queries to find this person. Return ONLY JSON:
-{"queries":["q1","q2","q3","q4"],"queryTerms":["t1","t2","t3"]}
+{"queries":["q1","q2","q3","q4"],"queryTerms":["t1","t2","t3"],"likelyUsername":"their_github_username","realName":"their real name"}
 
 Rules:
-- Extract the person's name, project name, company, or role from the query
-- q1: search by the person's name or known username in:login (e.g. "manaskamal in:login type:user")
-- q2: search their project or company name as keyword (e.g. "xeneva type:user")
-- q3: their role + company (e.g. "founder xeneva type:user")
-- q4: their name in fullname field (e.g. "manas kamal in:name type:user")
-- queryTerms: key identifying words from the query (name parts, project name, company)
+- FIRST identify the actual person using your knowledge, then build queries
+- likelyUsername: your best guess at their GitHub login (e.g. "torvalds", "manaskamal"). This is CRITICAL.
+- realName: their actual name (e.g. "Linus Torvalds")
+- q1: search by their likely username in:login (e.g. "torvalds in:login type:user")
+- q2: search their real name in:name (e.g. "Linus Torvalds in:name type:user")
+- q3: search their project or company name as keyword (e.g. "linux type:user")
+- q4: search by name + project (e.g. "linus torvalds linux type:user")
+- queryTerms: key identifying words (name parts, project name, username)
 - Do NOT add language filters for person searches`;
         } else {
           // Build location-aware query strings using deterministic extraction
@@ -1044,7 +1057,8 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
         if (!params?.queries?.length) throw new Error('AI failed to build queries.');
         // Merge AI-returned queryTerms with our deterministically extracted languages
         // This ensures primary + secondary langs are always in queryTerms for scoring
-        const aiTerms: string[] = params.queryTerms || [];
+        // Sanitize AI terms — the LLM sometimes returns non-string values (numbers, null)
+        const aiTerms: string[] = (params.queryTerms || []).filter((t: any) => typeof t === 'string' && t.length > 0);
         const detectedLangTerms = [
           ...(langInfo.primary ? [langInfo.primary.toLowerCase()] : []),
           ...langInfo.secondary.map(l => l.toLowerCase()),
@@ -1052,7 +1066,7 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
         // Merge: extracted langs first (they're authoritative), then AI terms
         const queryTerms: string[] = [
           ...detectedLangTerms,
-          ...aiTerms.filter(t => !detectedLangTerms.includes(t.toLowerCase())),
+          ...aiTerms.filter(t => typeof t === 'string' && !detectedLangTerms.includes(t.toLowerCase())),
         ];
 
         // Also try implied company ("Vercel developers") if explicit triggers didn't fire
@@ -1063,19 +1077,78 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
 
         const searchResults = await Promise.all(
           params.queries.map((q: string) =>
-            fetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=20&sort=repositories&order=desc`, { headers: gHeaders })
+            fetch(`https://api.github.com/search/users?q=${encodeURIComponent(q)}&per_page=50&sort=followers&order=desc`, { headers: gHeaders })
               .then(r => r.json()).catch(() => ({ items: [] }))
           )
         );
 
-        const seenIds = new Set<number>();
-        const uniqueItems: any[] = [];
+        // Track appearance count — users appearing in more query results are better matches
+        const osAppearCount = new Map<number, number>();
+        const osUserMap = new Map<number, any>();
         for (const data of searchResults) {
           for (const item of (data.items || [])) {
-            // Cap at 35 unique users — more than enough, keeps Stage 3 fast
-            if (item.type === 'User' && !seenIds.has(item.id) && uniqueItems.length < 35) {
-              seenIds.add(item.id); uniqueItems.push(item);
+            if (item.type === 'User') {
+              osAppearCount.set(item.id, (osAppearCount.get(item.id) || 0) + 1);
+              if (!osUserMap.has(item.id)) osUserMap.set(item.id, item);
             }
+          }
+        }
+        const uniqueItems: any[] = [...osUserMap.values()]
+          .sort((a, b) => (osAppearCount.get(b.id) || 0) - (osAppearCount.get(a.id) || 0))
+          .slice(0, 50);
+
+        // ── PERSON SEARCH: DIRECT USER LOOKUPS ─────────────────────────────
+        // When searching for a specific person ("linus torvalds", "founder of linux"),
+        // the GitHub user search API often misses the actual user.
+        // Fix: use AI-identified username first, then extract words as fallback.
+        if (mode === 'person') {
+          // Priority 1: AI-identified username (highest confidence)
+          const aiUsername = params.likelyUsername?.trim();
+          const aiRealName = params.realName?.trim();
+          
+          // Build candidate list: AI username first, then query-extracted words
+          const usernameCandidates: string[] = [];
+          if (aiUsername) usernameCandidates.push(aiUsername.toLowerCase());
+          
+          // Also try variations of the AI real name
+          if (aiRealName) {
+            const nameParts = aiRealName.toLowerCase().split(/\s+/);
+            for (const p of nameParts) if (p.length >= 2) usernameCandidates.push(p);
+            if (nameParts.length >= 2) {
+              usernameCandidates.push(nameParts.join('')); // "linustorvalds"
+              usernameCandidates.push(nameParts.join('-')); // "linus-torvalds"
+              usernameCandidates.push(nameParts[nameParts.length - 1]); // "torvalds" (surname)
+            }
+          }
+          
+          // Fallback: extract words from original query
+          const words = userQuery.toLowerCase().replace(/[^a-z0-9\s-]/g, '').split(/\s+/).filter((w: string) => w.length >= 2);
+          const stopWords = new Set(['who','what','the','of','is','in','at','for','a','an','and','or','founder','creator','author','maintainer','lead','cto','ceo','built','made','created','find','search','developer','engineer']);
+          const nameWords = words.filter((w: string) => !stopWords.has(w));
+          for (const w of nameWords) {
+            if (!usernameCandidates.includes(w)) usernameCandidates.push(w);
+          }
+
+          // Deduplicate
+          const uniqueCandidates = [...new Set(usernameCandidates)];
+
+          // Direct lookup: try to fetch each username candidate
+          const directLookups = await Promise.all(
+            uniqueCandidates.slice(0, 10).map(async (uname: string) => {
+              try {
+                const res = await fetch(`https://api.github.com/users/${uname}`, { headers: gHeaders });
+                if (!res.ok) return null;
+                const u = await res.json();
+                if (u && u.id && u.type === 'User' && !osUserMap.has(u.id)) {
+                  osUserMap.set(u.id, u);
+                  return u;
+                }
+                return null;
+              } catch { return null; }
+            })
+          );
+          for (const u of directLookups) {
+            if (u) uniqueItems.unshift(u); // prepend — these are high-confidence
           }
         }
 
@@ -1150,7 +1223,7 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
         const effectiveCompanyForScore = (companySignal || extractImpliedCompany(userQuery)) ?? null;
         const scored = withLangs.map(({ user, repos, events, langBars }) => {
           const evalRes = semanticRes.evals[user.login];
-          const { total, breakdown } = computeScore(user, langBars, events, queryTerms, repos, constraints, mode, locationInfo, effectiveCompanyForScore, evalRes);
+          const { displayScore, relevanceScore, breakdown } = computeScore(user, langBars, events, queryTerms, repos, constraints, mode, locationInfo, effectiveCompanyForScore, evalRes);
           const own = repos.filter((r: any) => !r.fork);
           return {
             handle: user.login,
@@ -1165,9 +1238,10 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
             contactDetails: extractContactDetails(user),
             languages: langBars,
             proficientLanguages: langBars.slice(0, 3).map((l: LanguageBar) => l.name),
-            commitCalendar: [] as CommitDay[], // populated below for top-15 only
+            commitCalendar: [] as CommitDay[],
             topRepos: getTopRepoSummaries(repos),
-            score: total,
+            score: displayScore,
+            relevance: relevanceScore,
             scoreBreakdown: breakdown,
             summary: evalRes?.assessment || '',
             accountCreated: user.created_at,
@@ -1195,23 +1269,20 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
           return { tier: 'none', missingLangs: missing };
         };
 
-        const resultCap = mode === 'person' ? 3 : 20;
-        const allSorted = scored.sort((a, b) => b.score - a.score);
+        const resultCap = mode === 'person' ? 5 : 20;
+        
+        const allWithTiers = scored.map(p => {
+          const { tier, missingLangs } = getMatchTier(p);
+          return { ...p, matchTier: tier, missingLangs };
+        });
 
-        const fullMatches    = allSorted.filter(p => getMatchTier(p).tier === 'full')
-          .map(p => ({ ...p, matchTier: 'full'    as const, missingLangs: [] as string[] }));
-        const partialMatches = allSorted.filter(p => getMatchTier(p).tier === 'primary')
-          .map(p => ({ ...p, matchTier: 'primary' as const, missingLangs: getMatchTier(p).missingLangs }));
-        const nearMatches    = allSorted.filter(p => getMatchTier(p).tier === 'none')
-          .map(p => ({ ...p, matchTier: 'none'    as const, missingLangs: getMatchTier(p).missingLangs }));
+        // STRICT QUALITY RANKING: Sort strictly by quality score, ignoring match tier grouping
+        const presorted = allWithTiers.sort((a, b) => b.score - a.score).slice(0, resultCap);
 
-        const presorted = [
-          ...fullMatches,
-          ...partialMatches,
-          ...nearMatches,
-        ].slice(0, resultCap);
-
-        // Update searchQuality
+        // Update searchQuality based on what we found (before cap)
+        const fullMatches = allWithTiers.filter(p => p.matchTier === 'full');
+        const partialMatches = allWithTiers.filter(p => p.matchTier === 'primary');
+        
         if (allRequired.length > 0 && fullMatches.length === 0 && partialMatches.length === 0) {
           searchQuality = 'none';
         } else if (allRequired.length > 0 && fullMatches.length < 3) {
@@ -1227,13 +1298,11 @@ ${companySignal && !locationInfo ? `- IMPORTANT: At least 2 queries MUST contain
           .map(p => ({ ...p, summary: p.summary || `${p.proficientLanguages.join(', ')} developer with ${p.stars} stars across ${p.own_repos} repos.` }))
           .filter(p => p.score >= 3);
 
-        // Re-order person results by AI's identity ranking if available
+        // For person searches, strictly filter out false-positives using the AI's identity assessment.
+        // If the AI determined a candidate is NOT the person requested, we drop them from the results.
+        // We do NOT re-sort them based on AI confidence. They remain strictly sorted by quality score.
         if (mode === 'person' && semanticRes.orderedHandles && semanticRes.orderedHandles.length > 0) {
-          const ordered = semanticRes.orderedHandles
-            .map(h => finalCandidates.find(p => p.handle === h))
-            .filter(Boolean) as typeof finalCandidates;
-          const rest = finalCandidates.filter(p => !semanticRes.orderedHandles!.includes(p.handle));
-          finalCandidates = [...ordered, ...rest];
+          finalCandidates = finalCandidates.filter(p => semanticRes.orderedHandles!.includes(p.handle));
         }
 
         const final = finalCandidates;

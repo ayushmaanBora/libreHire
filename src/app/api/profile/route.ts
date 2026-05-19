@@ -151,13 +151,48 @@ export async function POST(req: Request) {
         const totalContribs = calendar.reduce((a, d) => a + d.count, 0);
         const activeDays = calendar.filter(d => d.count > 0).length;
 
+        // Scoring — EXACT same formula as hunt route's computeScore.
+        // code(35) + influence(25) + activity(25) + profile(15) = max 100
+        const now = Date.now();
+        const recentlyPushed = own.filter((r: any) => new Date(r.pushed_at).getTime() > now - 365*86400000).length;
+        const avgImpact = own.length > 0 ? Math.log10(Math.max(stars / own.length, 1)) : 0;
+
+        // CODE IMPACT (35 pts)
+        const starPts = Math.log10(Math.max(stars, 1)) * 8;
+        const forkPts = Math.log10(Math.max(forks, 1)) * 4;
+        const depthBonus = own.length > 0 ? Math.min(12, Math.log10(Math.max(stars / own.length, 1)) * 5) : 0;
+        const _codeQuality = Math.min(35, starPts + forkPts + depthBonus);
+
+        // INFLUENCE (25 pts)
+        const _influence = Math.min(25, Math.log10(Math.max(user.followers||0, 1)) * 6 + Math.log10(Math.max(stars, 1)) * 3);
+
+        // ACTIVITY (25 pts)
+        const repoBonus = stars > 0 ? Math.min(5, Math.log10(Math.max(user.public_repos || 1, 1)) * 3) : 0;
+        const _activityScore = Math.min(25,
+          Math.min(10, recentlyPushed * 2) +
+          Math.min(12, avgImpact * 7) +
+          repoBonus
+        );
+
+        // PROFILE (15 pts)
+        let _profilePts = 0;
+        if (user.email) _profilePts += 3;
+        if (user.bio?.length > 20) _profilePts += 3;
+        if (user.blog) _profilePts += 2;
+        if (user.twitter_username) _profilePts += 2;
+        if (user.name && user.name !== user.login) _profilePts += 2;
+        if (user.location) _profilePts += 2;
+        if (user.company) _profilePts += 1;
+        const _profileSignal = Math.min(15, _profilePts);
+
         const scoreBreakdown = {
-          codeQuality: Math.min(40, Math.min(30, Math.log10(Math.max(stars,1))*10) + Math.min(10, Math.log10(Math.max(forks,1))*5)),
-          activity: Math.min(30, Math.min(20, Math.log10(Math.max(totalContribs,1))*7) + Math.min(10, activeDays / 3.65)),
-          profileCompleteness: Math.min(20, (user.email?5:0)+(user.bio?.length>20?4:0)+(user.blog?4:0)+(user.twitter_username?3:0)+(user.location?2:0)+(user.name&&user.name!==user.login?2:0)),
-          influence: Math.min(10, Math.log10(Math.max(user.followers||0, 1)) * 4),
+          codeQuality: _codeQuality,
+          activity: _activityScore,
+          influence: _influence,
+          profileCompleteness: _profileSignal,
         };
-        const totalScore = Math.round(Object.values(scoreBreakdown).reduce((a,b)=>a+b,0));
+        const qualityRaw = _codeQuality + _activityScore + _influence + _profileSignal;
+        const totalScore = Math.min(100, Math.round(qualityRaw));
 
         send({ type: 'progress', step: 4, total: 4, label: 'AI reviewing their entire body of work...' });
 

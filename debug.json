@@ -1,28 +1,28 @@
 {
-  "jobProfile": "Kernel / Low-Level",
+  "jobProfile": "Frontend",
   "languages": [
-    "C",
-    "C++",
-    "Rust"
+    "JavaScript",
+    "HTML",
+    "CSS"
   ],
   "country": "India",
-  "state": "Delhi",
-  "city": "Delhi",
+  "state": "Karnataka",
+  "city": "Bengaluru",
   "queries": [
-    "location:\"delhi\" language:\"C\" type:user",
-    "location:\"delhi\" language:\"C++\" type:user",
-    "location:\"delhi\" language:\"Rust\" type:user",
-    "location:\"new delhi\" language:\"C\" type:user",
-    "location:\"new delhi\" language:\"C++\" type:user",
-    "location:\"new delhi\" language:\"Rust\" type:user",
-    "location:\"ncr\" language:\"C\" type:user",
-    "location:\"ncr\" language:\"C++\" type:user"
+    "location:\"bangalore\" language:\"JavaScript\" type:user",
+    "location:\"bangalore\" language:\"HTML\" type:user",
+    "location:\"bangalore\" language:\"CSS\" type:user",
+    "location:\"bengaluru\" language:\"JavaScript\" type:user",
+    "location:\"bengaluru\" language:\"HTML\" type:user",
+    "location:\"bengaluru\" language:\"CSS\" type:user",
+    "location:\"blr\" language:\"JavaScript\" type:user",
+    "location:\"blr\" language:\"HTML\" type:user"
   ],
   "locationInfo": {
-    "canonical": "Delhi",
+    "canonical": "Bengaluru",
     "variants": [
-      "delhi",
-      "delhi",
+      "bengaluru",
+      "karnataka",
       "india"
     ],
     "isKnown": true
