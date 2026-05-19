@@ -2,8 +2,9 @@
 
 A Free & Open Source ethical recruiter tool. LibreHire analyses GitHub profiles and provides you the best matches according to your requirements and helps you reach out to them. You can also search up particular GitHub profiles and have them scored.
 
-![LibreHire Interface](./preview.png)
-*(To add an image here, simply place an image named `preview.png` in the root of the repository, and it will be rendered above.)*
+![LibreHire Interface1](./preview1.png)
+![LibreHire Interface2](./preview.png)
+
 
 ## Overview
 
