@@ -584,7 +584,7 @@ async function evaluateSemanticMatch(
   if (!candidates.length) return { evals: {} };
   
   const personRerankNote = mode === 'person'
-          ? `\nIMPORTANT: The user is searching for a specific person ("${query}"). Rank the exact matched person first in orderedHandles.`
+          ? `\nIMPORTANT: The user is searching for a specific person ("${query}"). Return ONLY the handle of the exact person they are looking for in orderedHandles. If you are not completely certain, or if a candidate just has a similar name but isn't the right person, DO NOT include them in orderedHandles. False positives are unacceptable.`
           : '';
 
   const prompt = `You are an elite technical recruiter AI (a semantic search engine).
